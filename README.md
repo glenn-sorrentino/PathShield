@@ -98,7 +98,7 @@ YELLOW  = Manufacturer name
 
 **BLE Devices:**
 ```
-Line 1: Device name (size 2 font)
+Line 1: Device name
 Line 2: Manufacturer from MAC lookup
 Line 3: Count/RSSI + MAC address
 ```
@@ -106,8 +106,8 @@ Line 3: Count/RSSI + MAC address
 **WiFi Devices:**
 ```
 Line 1: SSID or "Hidden"
-Line 2: Channel + Encryption type
-Line 3: Count/RSSI + MAC address
+Line 2: Manufacturer from MAC lookup
+Line 3: Channel + Encryption + Count/RSSI + BSSID
 ```
 
 ### Footer
