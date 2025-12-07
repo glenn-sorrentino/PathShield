@@ -1,6 +1,29 @@
+
 # PathShield
 
 Advanced BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and suspicious devices following you.
+
+## Contents
+
+1. [Features](#features)
+2. [Installation](#installation)
+3. [Controls](#controls)
+4. [Display Guide](#display-guide)
+5. [Detection Algorithm](#detection-algorithm)
+6. [Customization](#customization)
+7. [Troubleshooting](#troubleshooting)
+8. [Known Limitations](#known-limitations)
+9. [Credits](#credits)
+10. [License](#license)
+
+> [!WARNING]
+> ETHICAL USE REQUIRED
+> This software processes data locally without external transmission. Users are
+> solely responsible for:
+> - Compliance with applicable surveillance and privacy laws
+> - Obtaining consent before recording or analyzing individuals
+> - Respecting reasonable expectations of privacy
+> - Preventing misuse for stalking, harassment, or unauthorized monitoring
 
 ## Features
 
@@ -12,7 +35,7 @@ Advanced BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tile
 ## Installation
 
 ### Web Flasher (Recommended)
-[Install PathShield](https://lukeswitz.github.io/PathShield/)**
+[Install PathShield](https://lukeswitz.github.io/PathShield/)
 
 1. Open link in Chrome, Edge, or Opera (not Safari/Firefox)
 2. Connect M5StickC Plus via USB-C
@@ -63,20 +86,18 @@ CYAN    = WiFi access points / Normal BLE
 BLUE    = Known tracker (special MAC)
 RED     = Suspected tracker (persistence ≥ 0.65)
 YELLOW  = Manufacturer name
-MAGENTA = Divider lines
-WHITE   = Detection counts, RSSI
 ```
 
 ### Device Information
 
-**BLE Devices (3 lines):**
+**BLE Devices:**
 ```
 Line 1: Device name (size 2 font)
 Line 2: Manufacturer from MAC lookup
 Line 3: Count/RSSI + MAC address
 ```
 
-**WiFi Devices (3 lines):**
+**WiFi Devices:**
 ```
 Line 1: SSID or "Hidden"
 Line 2: Channel + Encryption type
@@ -234,18 +255,6 @@ esptool.py --port COM5 write_flash 0x290000 spiffs.bin
 - Wait 200ms between presses (debounce)
 - For menu: hold both buttons 300ms+
 
-## Technical Specifications
-```
-Scan Cycle:       WiFi 3s → BLE 3s (alternating)
-BLE Range:        ~30-50 meters
-WiFi Range:       ~50-100 meters
-Max Devices:      100 BLE + 50 WiFi
-Auto-Cleanup:     After 5 minutes
-Battery Life:     4-6 hours continuous
-Persistence Save: Every 60 seconds
-Display Refresh:  Every scan cycle
-```
-
 
 ## Known Limitations
 
@@ -264,7 +273,8 @@ Detection algorithms based on:
 
 ## License
 
-MIT License - Use at your own risk
+MIT License - Use at your own risk. Developers provide no warranty and accept no liability for unlawful or
+unethical use. Review local regulations before deployment.
 
 ## Contributing
 
