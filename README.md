@@ -1,12 +1,14 @@
 
 # `PathShield M5`
-BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and devices following you.
+BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and any devices following you.
 
-<img width="1024" height="776" alt="image" src="https://github.com/user-attachments/assets/cc6ffe15-b427-4e7e-a004-86e2879a05a8" />
+> [!WARNING]
+> ETHICAL USE REQUIRED
+> This software processes data locally without external transmission. Users are
+> solely responsible for: Compliance with all applicable laws. Respecting reasonable expectations of privacy
 
 
-
-## Contents
+## Table of Contents
 
 1. [Features](#features)
 2. [Installation](#installation)
@@ -19,12 +21,7 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and de
 9. [Credits](#credits)
 10. [License](#license)
 
-> [!WARNING]
-> ETHICAL USE REQUIRED
-> This software processes data locally without external transmission. Users are
-> solely responsible for:
-> - Compliance with all applicable laws
-> - Respecting reasonable expectations of privacy
+
 
 ## Features
 
@@ -44,7 +41,7 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and de
 4. Select serial port
 5. Wait ~2 minutes
 
-### Arduino IDE
+### From Source w/Arduino IDE
 
 1. Install M5StickCPlus library
 2. Board: **M5Stick-C-Plus**
@@ -55,7 +52,7 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and de
 
 ### Normal Mode
 ```
-Button A:     Pause/Resume scanning
+Button A:     Pause scanning
 Button B:     Toggle name filter
 A+B (hold):   Settings menu
 ```
@@ -72,14 +69,12 @@ Button B hold: Resume (hold 1 second)
 Button A:  Navigate options
 Button B:  Select option
 A+B hold:  Exit menu
-```
 
-## Settings
+---Settings---
 - Brightness Low/High
 - Clear Devices
 - Shutdown Device
-
-![image](https://github.com/user-attachments/assets/e5e11445-cbd5-465e-96d8-435b8f60ac19)
+```
 
 ## Display Guide
 
@@ -91,7 +86,7 @@ A+B hold:  Exit menu
 ### Color Codes
 ```
 CYAN    = WiFi access points / Normal BLE
-BLUE    = Known tracker (special MAC)
+BLUE    = User defined tracker (special MAC)
 RED     = Suspected tracker (persistence ≥ 0.65)
 YELLOW  = Manufacturer name
 ```
@@ -149,13 +144,22 @@ Line 3: Count/RSSI + BSSID (last 8 chars)
 Edit `specialMacs[]` in PathShield.ino:
 ```cpp
 const char *specialMacs[] = {
-  "4C:00:12",  // Apple AirTag
-  "C4:AC:05",  // Tile
-  "D3:00:FF",  // Tile (additional)
-  "E4:5F:01",  // Samsung SmartTag
-  "74:5C:4B",  // Samsung SmartTag+
-  "EC:81:93",  // Chipolo
-  "FF:FF:C0",  // Generic tracker pattern
+  // Apple OUIs (AirTags use rotating addresses from Apple's OUI space)
+  "AC:DE:48",  // Apple Inc.
+  "F0:98:9D",  // Apple Inc.
+  "BC:92:6B",  // Apple Inc.
+  
+  // Tile
+  "C4:AC:05",  // Tile Inc.
+  "E0:00:00",  // Tile Inc. (some models)
+  
+  // Samsung SmartTag
+  "E4:5F:01",  // Samsung Electronics
+  "74:5C:4B",  // Samsung Electronics
+  "E8:50:8B",  // Samsung Electronics (additional)
+  
+  // Chipolo
+  "EC:81:93",  // Chipolo d.o.o.
 };
 ```
 
