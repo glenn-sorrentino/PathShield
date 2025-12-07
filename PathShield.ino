@@ -62,8 +62,9 @@ bool scanningWiFi = true;
 unsigned long lastScanSwitch = 0;
 const unsigned long SCAN_SWITCH_INTERVAL = 3000;
 
+// Privacy Invader Defaults: Axon cameras, Liteon Technology (Flock), Utility Inc (Flock)
 const char *specialMacs[] = {
-  "00:25:DF", "20:3A:07", "34:DE:1A", "44:65:0D", "58:82:A8"
+  "00:25:DF", "14:5A:FC", "00:09:BC"
 };
 
 struct TimeWindow {
@@ -305,7 +306,7 @@ void displayStartupMessage() {
   M5.Lcd.setTextColor(GREEN);
   
   M5.Lcd.setCursor(10, 95);
-  M5.Lcd.print("> Initializing BLE");
+  M5.Lcd.print("> Initializing BLE/WiFi");
   delay(400);
   
   M5.Lcd.setCursor(190, 95);
