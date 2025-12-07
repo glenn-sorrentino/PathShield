@@ -23,10 +23,8 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and de
 > ETHICAL USE REQUIRED
 > This software processes data locally without external transmission. Users are
 > solely responsible for:
-> - Compliance with applicable surveillance and privacy laws
-> - Obtaining consent before recording or analyzing individuals
+> - Compliance with all applicable laws
 > - Respecting reasonable expectations of privacy
-> - Preventing misuse for stalking, harassment, or unauthorized monitoring
 
 ## Features
 
@@ -37,7 +35,7 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and de
 
 ## Installation
 
-### Web Flasher (Recommended)
+### Web Flasher 
 [Install PathShield](https://lukeswitz.github.io/PathShield/)
 
 1. Open link in Chrome, Edge, or Opera (not Safari/Firefox)
