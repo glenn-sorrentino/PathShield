@@ -1,5 +1,5 @@
 <div align="center">
-<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/0dac6a9f-32a8-4b05-b6a1-b59fc3762f51" />
+<img height="500" alt="image" src="https://github.com/user-attachments/assets/0dac6a9f-32a8-4b05-b6a1-b59fc3762f51" />
 
 BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and any devices following you.
 </div>
