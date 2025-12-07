@@ -1,7 +1,6 @@
 
-# PathShield
-
-Advanced BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and suspicious devices following you.
+# `PathShield M5`
+BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and devices following you.
 
 ## Contents
 
