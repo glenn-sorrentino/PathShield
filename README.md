@@ -1,14 +1,15 @@
 <div align="center">
 <img height="500" alt="image" src="https://github.com/user-attachments/assets/0dac6a9f-32a8-4b05-b6a1-b59fc3762f51" />
 
-BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and any devices following you.
+PathShield is an RF awareness tool for M5StickC Plus- It uses BLE & WiFI scanning to detect and alert to devices following you, and also user defined targets. 
 </div>
 
 ---
 
 > [!WARNING]
-> ETHICAL USE ONLY:
-> This software processes data locally without external transmission. Users are solely responsible for: Compliance with all applicable laws. Respecting reasonable expectations of privacy
+> **ETHICAL USE ONLY**
+
+This software processes data locally without external transmission. Users are solely responsible for: Compliance with all applicable laws. Respecting reasonable expectations of privacy
 
 
 ## Table of Contents
@@ -28,10 +29,10 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and an
 
 ## Features
 
-- **Dual-Band Scanning**: Alternates WiFi and BLE detection
+- **Dual-Band Scanning**: Alternates WiFi and BLE detection, displays MAC, vendor, SSID, channel, hit count & RSSI. 
 - **Persistence Scoring**: Multi-factor algorithm reduces false positives
-- **Real-Time Alerts**: Visual notifications for detected trackers
-- **5000+ MAC Database**: Automatic manufacturer identification
+- **Real-Time Alerts**: Visual notifications for detected trackers and user specified MAC targets
+- **5000+ MAC Database**: Automatic offline manufacturer identification
 
 ## Installation
 
@@ -55,9 +56,9 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and an
 
 ### Normal Scanning Mode
 ```
-Button A:     Pause scanning
-Button B:     Toggle name filter
-A+B (hold):   Settings menu
+Button A Hold:   Pause scanning
+Button B Hold:   Toggle name filter
+A+B (hold):      Settings menu
 ```
 
 ### Paused 
