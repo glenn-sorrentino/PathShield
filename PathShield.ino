@@ -746,7 +746,6 @@ void displayTrackedDevices() {
       } else if (trackedDevices[i].detected) {
         M5.Display.setTextColor(RED);
       } else {
-         // This is the main change: regular devices get the BLE color
          M5.Display.setTextColor(BLE_NAME_COLOR);
       }
 
@@ -803,14 +802,16 @@ void displayTrackedDevices() {
   if (totalItems > 0) {
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(YELLOW);
-    M5.Display.setCursor(2, 124);
-
+    
+    char countStr[20];
     int showing = std::min(maxDisplay, totalItems - scrollIndex);
-    M5.Display.print(scrollIndex + 1);
-    M5.Display.print("-");
-    M5.Display.print(scrollIndex + showing);
-    M5.Display.print("/");
-    M5.Display.print(totalItems);
+    snprintf(countStr, sizeof(countStr), "%d-%d/%d", scrollIndex + 1,
+             scrollIndex + showing, totalItems);
+    
+    int textWidth = strlen(countStr) * 6;
+    int xPos = SCREEN_WIDTH - textWidth - 4;
+    M5.Display.setCursor(xPos, 124);
+    M5.Display.print(countStr);
 
     if (paused && totalItems > maxDisplay) {
       M5.Display.setCursor(80, 124);
