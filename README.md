@@ -1,14 +1,14 @@
 <div align="center">
 <img height="500" alt="image" src="https://github.com/user-attachments/assets/0dac6a9f-32a8-4b05-b6a1-b59fc3762f51" />
 
-BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and any devices following you.
+PathShield is an RF awareness tool for M5StickC Plus (v1)- It uses BLE & WiFI scanning to detect and alert to devices following you, and also user defined targets. 
 </div>
 
 ---
 
-> [!WARNING]
-> ETHICAL USE ONLY:
-> This software processes data locally without external transmission. Users are solely responsible for: Compliance with all applicable laws. Respecting reasonable expectations of privacy
+> [!CAUTION]
+> **ETHICAL USE ONLY**
+> Users are solely responsible for: Compliance with all applicable laws. Respecting reasonable expectations of privacy
 
 
 ## Table of Contents
@@ -28,10 +28,13 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and an
 
 ## Features
 
-- **Dual-Band Scanning**: Alternates WiFi and BLE detection
+- **Dual-Band Scanning**: Alternates WiFi and BLE detection, displays MAC, vendor, SSID, channel, hit count & RSSI. 
 - **Persistence Scoring**: Multi-factor algorithm reduces false positives
-- **Real-Time Alerts**: Visual notifications for detected trackers
-- **5000+ MAC Database**: Automatic manufacturer identification
+- **Real-Time Alerts**: Visual notifications for detected trackers and user specified MAC targets
+- **5000+ MAC Database**: Automatic offline manufacturer identification
+
+> [!NOTE]
+> Change the `specialMacs` to your own target devices, or use as is: detects Flock and Axon Taser cameras.  
 
 ## Installation
 
@@ -42,7 +45,7 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and an
 2. Connect M5StickC Plus via USB-C
 3. Click "Deploy Firmware"
 4. Select serial port
-5. Wait ~2 minutes
+5. Wait ~2 minutes for it to complete
 
 ### From Source w/Arduino IDE
 
@@ -51,13 +54,14 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and an
 3. Partition: **Huge APP (3MB No OTA/1MB SPIFFS)**
 4. Upload sketch
 
+
 ## Controls
 
 ### Normal Scanning Mode
 ```
-Button A:     Pause scanning
-Button B:     Toggle name filter
-A+B (hold):   Settings menu
+Button A Hold:   Pause scanning
+Button B Hold:   Toggle name filter
+A+B (hold):      Settings menu
 ```
 
 ### Paused 
@@ -217,6 +221,8 @@ M5.Display.drawFastHLine(0, 0, SCREEN_WIDTH, MAGENTA);  // Border color
 ```
 
 ## Troubleshooting
+
+> Tested with M5stickCPlusv1. Support for more devices can be requested by opening a ticket
 
 ### No Alerts for Known Tracker
 
