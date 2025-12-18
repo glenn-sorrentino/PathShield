@@ -35,7 +35,7 @@ BLE and WiFi tracker detection for M5StickC Plus. Detects AirTags, Tiles, and an
 
 ## Installation
 
-### Web Flasher 
+### Web Flasher
 [Install PathShield](https://lukeswitz.github.io/PathShield/)
 
 1. Open link in Chrome, Edge, or Opera (not Safari/Firefox)
@@ -166,6 +166,20 @@ const char *specialMacs[] = {
 };
 ```
 
+### Allowlist (Trusted Devices)
+
+Add your own trusted devices to `allowlistMacs[]` to prevent false alerts:
+
+```cpp
+const char *allowlistMacs[] = {
+  "AA:BB:CC",  // Your trusted device 1
+  "DD:EE:FF",  // Your trusted device 2
+  // Add MAC prefixes of devices you own
+};
+```
+
+Allowlisted devices are completely ignored during scanning and will never trigger tracker alerts.
+
 ### Adjust Sensitivity
 
 **More Sensitive (more alerts):**
@@ -198,8 +212,8 @@ const int maxDisplay = 3;  // Change to 2 or 4
 
 **Color scheme (in displayTrackedDevices):**
 ```cpp
-M5.Lcd.setTextColor(CYAN);     // Change to GREEN, BLUE, etc.
-M5.Lcd.drawFastHLine(0, 0, SCREEN_WIDTH, MAGENTA);  // Border color
+M5.Display.setTextColor(CYAN);     // Change to GREEN, BLUE, etc.
+M5.Display.drawFastHLine(0, 0, SCREEN_WIDTH, MAGENTA);  // Border color
 ```
 
 ## Troubleshooting
