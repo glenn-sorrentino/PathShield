@@ -644,7 +644,7 @@ void displayTrackedDevices() {
         y += 1;
       }
 
-      M5.Display.setTextColor(WIFI_NAME_COLOR); // CYAN for WiFi
+      M5.Display.setTextColor(WIFI_NAME_COLOR);
       M5.Display.setTextSize(2);
       M5.Display.setCursor(2, y);
       char ssidDisplay[20];
@@ -1122,56 +1122,153 @@ void handleButtonCombination() {
 }
 
 void loadDeviceData() {
+  Serial.println("loadDeviceData START");
+  
+  if (!SPIFFS.exists("/devices.txt")) {
+    Serial.println("devices.txt does not exist");
+    deviceIndex = 0;
+    return;
+  }
+
   File file = SPIFFS.open("/devices.txt", FILE_READ);
-  if (!file) return;
+  if (!file) {
+    Serial.println("Failed to open devices.txt");
+    return;
+  }
 
   deviceIndex = 0;
+  char line[256];
+  int lineIdx = 0;
+  int bytesRead = 0;
+
   while (file.available() && deviceIndex < MAX_DEVICES) {
-    String line = file.readStringUntil('\n');
-    int comma1 = line.indexOf(',');
-    int comma2 = line.indexOf(',', comma1 + 1);
-    int comma3 = line.indexOf(',', comma2 + 1);
+    int c = file.read();
+    bytesRead++;
 
-    if (comma1 > 0 && comma2 > 0) {
-      memset(&trackedDevices[deviceIndex], 0, sizeof(DeviceInfo));
+    if (bytesRead % 256 == 0) {
+      vTaskDelay(2 / portTICK_PERIOD_MS);
+    }
 
-      String addr = line.substring(0, comma1);
-      strncpy(trackedDevices[deviceIndex].address, addr.c_str(), 17);
-      trackedDevices[deviceIndex].address[17] = '\0';
-
-      trackedDevices[deviceIndex].lastSeen = line.substring(comma1 + 1, comma2).toInt();
-      trackedDevices[deviceIndex].totalCount =
-          (comma3 > 0) ? line.substring(comma2 + 1, comma3).toInt() : 0;
-      trackedDevices[deviceIndex].persistenceScore =
-          (comma3 > 0) ? line.substring(comma3 + 1).toFloat() : 0.0f;
-
-      String mfg = getManufacturer(trackedDevices[deviceIndex].address);
-      strncpy(trackedDevices[deviceIndex].manufacturer, mfg.c_str(), 30);
-      trackedDevices[deviceIndex].manufacturer[30] = '\0';
-
-      trackedDevices[deviceIndex].firstSeen = trackedDevices[deviceIndex].lastSeen;
-      trackedDevices[deviceIndex].isSpecial =
-          isSpecialMac(trackedDevices[deviceIndex].address);
-
-      deviceIndex++;
+    if (c == '\n') {
+      if (lineIdx > 0) {
+        line[lineIdx] = '\0';
+        parseLine(line);
+        lineIdx = 0;
+      }
+    } else if (c >= 32 && c < 127 || c == ':' || c == '.') {
+      if (lineIdx < 255) {
+        line[lineIdx++] = (char)c;
+      }
     }
   }
 
+  if (lineIdx > 0) {
+    line[lineIdx] = '\0';
+    parseLine(line);
+  }
+
   file.close();
+  Serial.print("loadDeviceData COMPLETE: ");
+  Serial.println(deviceIndex);
+}
+
+void parseLine(const char *line) {
+  if (!line || strlen(line) == 0) return;
+
+  int comma1 = -1, comma2 = -1, comma3 = -1;
+  int len = strlen(line);
+
+  for (int i = 0; i < len; i++) {
+    if (line[i] == ',') {
+      if (comma1 == -1) comma1 = i;
+      else if (comma2 == -1) comma2 = i;
+      else if (comma3 == -1) comma3 = i;
+    }
+  }
+
+  if (comma1 <= 0 || comma2 <= comma1) return;
+
+  memset(&trackedDevices[deviceIndex], 0, sizeof(DeviceInfo));
+
+  strncpy(trackedDevices[deviceIndex].address, line, comma1);
+  trackedDevices[deviceIndex].address[comma1] = '\0';
+
+  char lastSeenStr[32], countStr[32], scoreStr[32];
+  
+  strncpy(lastSeenStr, line + comma1 + 1, comma2 - comma1 - 1);
+  lastSeenStr[comma2 - comma1 - 1] = '\0';
+  trackedDevices[deviceIndex].lastSeen = (unsigned long)atol(lastSeenStr);
+
+  if (comma3 > 0) {
+    strncpy(countStr, line + comma2 + 1, comma3 - comma2 - 1);
+    countStr[comma3 - comma2 - 1] = '\0';
+    trackedDevices[deviceIndex].totalCount = atoi(countStr);
+
+    strncpy(scoreStr, line + comma3 + 1, len - comma3 - 1);
+    scoreStr[len - comma3 - 1] = '\0';
+    trackedDevices[deviceIndex].persistenceScore = atof(scoreStr);
+  } else {
+    trackedDevices[deviceIndex].totalCount = atoi(lastSeenStr + comma2 - comma1);
+    trackedDevices[deviceIndex].persistenceScore = 0.0f;
+  }
+
+  String mfg = getManufacturer(trackedDevices[deviceIndex].address);
+  strncpy(trackedDevices[deviceIndex].manufacturer, mfg.c_str(), 30);
+  trackedDevices[deviceIndex].manufacturer[30] = '\0';
+
+  trackedDevices[deviceIndex].firstSeen = trackedDevices[deviceIndex].lastSeen;
+  trackedDevices[deviceIndex].isSpecial =
+      isSpecialMac(trackedDevices[deviceIndex].address);
+
+  deviceIndex++;
 }
 
 void loadIgnoreList() {
-  File file = SPIFFS.open("/ignore_list.txt", FILE_READ);
-  if (!file) return;
+  Serial.println("loadIgnoreList START");
+  
+  if (!SPIFFS.exists("/ignore_list.txt")) {
+    Serial.println("ignore_list.txt does not exist");
+    return;
+  }
 
-  while (file.available()) {
-    String mac = file.readStringUntil('\n');
-    mac.trim();
-    if (mac.length() > 0) {
-      ignoreList.insert(mac);
+  File file = SPIFFS.open("/ignore_list.txt", FILE_READ);
+  if (!file) {
+    Serial.println("Failed to open ignore_list.txt");
+    return;
+  }
+
+  char buffer[32];
+  int bufIdx = 0;
+  int bytesRead = 0;
+  
+  while (file.available() && ignoreList.size() < 100) {
+    int c = file.read();
+    bytesRead++;
+    
+    if (bytesRead % 128 == 0) {
+      vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+
+    if (c == '\n' || c == '\r') {
+      if (bufIdx > 0) {
+        buffer[bufIdx] = '\0';
+        String mac(buffer);
+        mac.trim();
+        if (mac.length() > 0) {
+          ignoreList.insert(mac);
+        }
+        bufIdx = 0;
+      }
+    } else if (c >= 32 && c < 127) {
+      if (bufIdx < 31) {
+        buffer[bufIdx++] = (char)c;
+      }
     }
   }
+
   file.close();
+  Serial.print("loadIgnoreList COMPLETE: ");
+  Serial.println(ignoreList.size());
 }
 
 void setup() {
@@ -1234,18 +1331,20 @@ void loop() {
     if (M5.BtnA.wasPressed() && (currentMillis - lastBtnAPress > DEBOUNCE_DELAY)) {
       lastBtnAPress = currentMillis;
       handleBtnA();
+      vTaskDelay(10 / portTICK_PERIOD_MS);
       return;
     }
 
     if (M5.BtnB.wasPressed() && (currentMillis - lastBtnBPress > DEBOUNCE_DELAY)) {
       lastBtnBPress = currentMillis;
       handleBtnB();
+      vTaskDelay(10 / portTICK_PERIOD_MS);
       return;
     }
   }
 
   if (paused) {
-    delay(100);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
     return;
   }
 
@@ -1265,8 +1364,10 @@ void loop() {
   if (scanningWiFi) {
     int n = WiFi.scanNetworks(false, false, false, 300);
     for (int i = 0; i < n; i++) {
-      trackWiFiDevice(WiFi.SSID(i).c_str(), WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i),
-                      WiFi.channel(i), WiFi.encryptionType(i), currentTime);
+      trackWiFiDevice(WiFi.SSID(i).c_str(), WiFi.BSSIDstr(i).c_str(),
+                      WiFi.RSSI(i), WiFi.channel(i), WiFi.encryptionType(i),
+                      currentTime);
+      vTaskDelay(1 / portTICK_PERIOD_MS);
     }
     WiFi.scanDelete();
   } else {
@@ -1286,6 +1387,7 @@ void loop() {
             newTrackerFound = true;
           }
         }
+        vTaskDelay(1 / portTICK_PERIOD_MS);
       }
 
       if (newTrackerFound && deviceIndex > 0) {
@@ -1307,5 +1409,5 @@ void loop() {
     lastSaveTime = currentMillis;
   }
 
-  delay(50);
+  vTaskDelay(50 / portTICK_PERIOD_MS);
 }
