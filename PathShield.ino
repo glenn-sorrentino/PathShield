@@ -601,7 +601,7 @@ void drawTopBar() {
 
   M5.Display.setTextColor(BLUE_GREY);
   M5.Display.setCursor(45, 3);
-  M5.Display.print("B:");
+  M5.Display.print("BATT:");
 
   M5.Display.drawRect(barX, barY, barWidth, 6, BLUE_GREY);
   int filledWidth = (barWidth - 2) * batPercent / 100;
@@ -630,7 +630,7 @@ void drawTopBar() {
 
   M5.Display.setCursor(135, 3);
   M5.Display.setTextColor(BLUE_GREY);
-  M5.Display.print("M:");
+  M5.Display.print("MEM:");
 
   M5.Display.drawRect(barX, barY, barWidth, 6, BLUE_GREY);
   filledWidth = (barWidth - 2) * memPercent / 100;
@@ -648,42 +648,35 @@ void drawTopBar() {
 // Generate a hash of the current display state to detect changes
 uint32_t getDisplayStateHash() {
   uint32_t hash = 0;
-
-  // Hash based on number of devices
+  
+  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(10)) != pdTRUE) {
+    return 0;  // Force redraw
+  }
+  
   hash = deviceIndex * 31 + wifiDeviceIndex;
   hash = hash * 31 + scrollIndex;
   hash = hash * 31 + (scanningWiFi ? 1 : 0);
   hash = hash * 31 + (paused ? 1 : 0);
   hash = hash * 31 + (filterByName ? 1 : 0);
 
-  // Hash WiFi devices if scanning
   if (scanningWiFi) {
     for (int i = scrollIndex; i < wifiDeviceIndex && i < scrollIndex + 3; i++) {
       hash = hash * 31 + wifiDevices[i].rssi;
       hash = hash * 31 + wifiDevices[i].detectionCount;
-      for (int j = 0; j < 5 && j < strlen(wifiDevices[i].ssid); j++) {
-        hash = hash * 31 + wifiDevices[i].ssid[j];
-      }
     }
   } else {
-    // Hash BLE devices
     int filteredCount = 0;
-    int sortedIndices[MAX_DEVICES];
-
     for (int i = 0; i < deviceIndex; i++) {
       if (filterByName && strlen(trackedDevices[i].name) == 0) continue;
-      sortedIndices[filteredCount++] = i;
+      filteredCount++;
     }
-
-    for (int idx = scrollIndex; idx < filteredCount && idx < scrollIndex + 3; idx++) {
-      int i = sortedIndices[idx];
+    for (int i = scrollIndex; i < filteredCount && i < scrollIndex + 3; i++) {
       hash = hash * 31 + trackedDevices[i].totalCount;
       hash = hash * 31 + trackedDevices[i].lastRssi;
-      hash = hash * 31 + (trackedDevices[i].detected ? 1 : 0);
-      hash = hash * 31 + (int)(trackedDevices[i].persistenceScore * 100);
     }
   }
 
+  xSemaphoreGive(deviceMutex);
   return hash;
 }
 
@@ -691,8 +684,15 @@ void displayTrackedDevices() {
   static unsigned long lastRender = 0;
   static uint32_t lastStateHash = 0;
   unsigned long now = millis();
+  static bool lastScanMode = false;
 
-  // Always throttle to at least 300ms between renders to prevent excessive updates
+  // Force redraw if mode switched
+  if (lastScanMode != scanningWiFi) {
+    lastStateHash = 0;  // Invalidate hash
+    lastScanMode = scanningWiFi;
+  }
+
+  // Throttle
   if (now - lastRender < 300) {
     return;
   }
@@ -1441,6 +1441,7 @@ void setup() {
 
   M5.begin();
   Serial.println("M5 initialized");
+  delay(100);
 
   M5.Display.fillScreen(BLACK);
   M5.Display.setRotation(3);
@@ -1448,7 +1449,13 @@ void setup() {
   M5.Display.setTextSize(1);
   M5.Display.setBrightness(204);
 
+  delay(100);
   Serial.println("Display initialized");
+
+  displayStartupMessage();
+  Serial.println("Startup message displayed");
+
+  delay(100);
 
   BLEDevice::init("");
   pBLEScan = BLEDevice::getScan();
@@ -1458,6 +1465,7 @@ void setup() {
   pBLEScan->setActiveScan(true);
 
   Serial.println("BLE initialized");
+  delay(200);
 
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS mount failed");
@@ -1465,22 +1473,15 @@ void setup() {
   }
 
   Serial.println("SPIFFS initialized");
-
-  // NOTE: To ignore specific devices, add their MAC prefixes to allowlistMacs[] array above
-  Serial.println("Skipping ignore list - use allowlistMacs[] array instead");
-
-  // Create mutex for thread-safe access to device arrays
+  
   deviceMutex = xSemaphoreCreateMutex();
   if (deviceMutex == NULL) {
-    Serial.println("ERROR: Failed to create mutex!");
-    while (1) { delay(1000); }
+    Serial.println("ERROR: Failed to create device mutex!");
+    while (1) { delay(300); }
   }
-  Serial.println("Mutex created");
-
-  displayStartupMessage();
-  Serial.println("Startup message displayed");
-
-  delay(2000);
+  Serial.println("Device mutex created");
+  
+  delay(1000);
 
   M5.Display.fillScreen(BLACK);
   drawTopBar();
@@ -1518,6 +1519,8 @@ void loop() {
   static bool firstRun = true;
   const unsigned long DISPLAY_UPDATE_INTERVAL = 1000;
 
+  M5.update();
+
   if (firstRun) {
     M5.Display.setBrightness(highBrightness ? 204 : 77);
     screenOn = true;
@@ -1530,8 +1533,6 @@ void loop() {
 
   bool btnA = M5.BtnA.wasPressed();
   bool btnB = M5.BtnB.wasPressed();
-
-  M5.update();
 
   if ((btnA || btnB) && !screenOn) {
     screenOn = true;
