@@ -645,13 +645,65 @@ void drawTopBar() {
   M5.Display.drawFastHLine(0, 12, SCREEN_WIDTH, CYAN);
 }
 
+// Generate a hash of the current display state to detect changes
+uint32_t getDisplayStateHash() {
+  uint32_t hash = 0;
+
+  // Hash based on number of devices
+  hash = deviceIndex * 31 + wifiDeviceIndex;
+  hash = hash * 31 + scrollIndex;
+  hash = hash * 31 + (scanningWiFi ? 1 : 0);
+  hash = hash * 31 + (paused ? 1 : 0);
+  hash = hash * 31 + (filterByName ? 1 : 0);
+
+  // Hash WiFi devices if scanning
+  if (scanningWiFi) {
+    for (int i = scrollIndex; i < wifiDeviceIndex && i < scrollIndex + 3; i++) {
+      hash = hash * 31 + wifiDevices[i].rssi;
+      hash = hash * 31 + wifiDevices[i].detectionCount;
+      for (int j = 0; j < 5 && j < strlen(wifiDevices[i].ssid); j++) {
+        hash = hash * 31 + wifiDevices[i].ssid[j];
+      }
+    }
+  } else {
+    // Hash BLE devices
+    int filteredCount = 0;
+    int sortedIndices[MAX_DEVICES];
+
+    for (int i = 0; i < deviceIndex; i++) {
+      if (filterByName && strlen(trackedDevices[i].name) == 0) continue;
+      sortedIndices[filteredCount++] = i;
+    }
+
+    for (int idx = scrollIndex; idx < filteredCount && idx < scrollIndex + 3; idx++) {
+      int i = sortedIndices[idx];
+      hash = hash * 31 + trackedDevices[i].totalCount;
+      hash = hash * 31 + trackedDevices[i].lastRssi;
+      hash = hash * 31 + (trackedDevices[i].detected ? 1 : 0);
+      hash = hash * 31 + (int)(trackedDevices[i].persistenceScore * 100);
+    }
+  }
+
+  return hash;
+}
+
 void displayTrackedDevices() {
   static unsigned long lastRender = 0;
+  static uint32_t lastStateHash = 0;
   unsigned long now = millis();
 
+  // Always throttle to at least 300ms between renders to prevent excessive updates
   if (now - lastRender < 300) {
     return;
   }
+
+  // Check if the state has actually changed
+  uint32_t currentHash = getDisplayStateHash();
+  if (currentHash == lastStateHash) {
+    return; // No change in data, skip rendering
+  }
+
+  lastStateHash = currentHash;
   lastRender = now;
 
   M5.Display.fillScreen(BLACK);
