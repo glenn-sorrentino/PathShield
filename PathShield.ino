@@ -5,15 +5,15 @@
 #include <BLEAdvertisedDevice.h>
 #include "MacPrefixes.h"
 #include <algorithm>
-#include <set>
 #include <SPIFFS.h>
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 
 #define SCREEN_WIDTH 240
 #define SCREEN_HEIGHT 135
 #define DEFAULT_SCREEN_TIMEOUT 30000
 
-// Memory constants, tweak for traffic density/memory
+// Memory constants, TWEAK THESE FOR YOUR USE
 #define MAX_DEVICES 50
 #define MAX_WIFI_DEVICES 50
 #define DETECTION_WINDOW 300
@@ -63,6 +63,10 @@ unsigned long lastActivityTime = 0;
 bool screenOn = true;
 unsigned long screenTimeoutMs = DEFAULT_SCREEN_TIMEOUT;
 
+bool alertActive = false;
+unsigned long alertStartTime = 0;
+const unsigned long ALERT_DURATION = 5000;
+
 struct WiFiDeviceInfo {
   char ssid[33];
   char bssid[18];
@@ -81,7 +85,10 @@ const unsigned long SCAN_SWITCH_INTERVAL = 3000;
 
 // Privacy Invader Defaults: Axon cameras, Liteon Technology (Flock), Utility Inc (Flock) OUIs
 const char *specialMacs[] = {"00:25:DF", "14:5A:FC", "00:09:BC"};
-// Example: "AA:BB:CC" - add trusted device OUIs here
+
+// IGNORE LIST: Add MAC prefixes of YOUR devices here to ignore them
+// Example: const char *allowlistMacs[] = {"AA:BB:CC", "DD:EE:FF", "11:22:33"};
+// Leave as {""} to track all devices
 const char *allowlistMacs[] = {""};
 
 struct TimeWindow {
@@ -116,7 +123,11 @@ DeviceInfo trackedDevices[MAX_DEVICES];
 int deviceIndex = 0;
 BLEScan *pBLEScan;
 int scrollIndex = 0;
-std::set<String> ignoreList;
+
+// FreeRTOS multi-core support
+SemaphoreHandle_t deviceMutex = NULL;
+TaskHandle_t scanTaskHandle = NULL;
+volatile bool scanTaskRunning = true;
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {}
@@ -446,7 +457,7 @@ void alertUser(bool isSpecial, const char *name, const char *mac, float persiste
   screenOn = true;
   lastActivityTime = millis();
   M5.Display.setBrightness(204);
-  
+
   if (isSpecial) {
     for (int i = 0; i < 5; i++) {
       M5.Display.fillScreen(RED);
@@ -635,6 +646,14 @@ void drawTopBar() {
 }
 
 void displayTrackedDevices() {
+  static unsigned long lastRender = 0;
+  unsigned long now = millis();
+
+  if (now - lastRender < 300) {
+    return;
+  }
+  lastRender = now;
+
   M5.Display.fillScreen(BLACK);
 
   drawTopBar();
@@ -643,6 +662,11 @@ void displayTrackedDevices() {
   int displayed = 0;
   const int maxDisplay = 3;
   int totalItems = 0;
+
+  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+    // If we can't get the mutex quickly, just show the top bar
+    return;
+  }
 
   if (scanningWiFi) {
     totalItems = wifiDeviceIndex;
@@ -811,12 +835,12 @@ void displayTrackedDevices() {
   if (totalItems > 0) {
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(YELLOW);
-    
+
     char countStr[20];
     int showing = std::min(maxDisplay, totalItems - scrollIndex);
     snprintf(countStr, sizeof(countStr), "%d-%d/%d", scrollIndex + 1,
              scrollIndex + showing, totalItems);
-    
+
     int textWidth = strlen(countStr) * 6;
     int xPos = SCREEN_WIDTH - textWidth - 4;
     M5.Display.setCursor(xPos, 124);
@@ -828,6 +852,8 @@ void displayTrackedDevices() {
       M5.Display.print("A/B:Scroll");
     }
   }
+
+  xSemaphoreGive(deviceMutex);
 }
 
 void displayMenuScreen() {
@@ -871,8 +897,7 @@ void displayMenuScreen() {
   M5.Display.setCursor(2, y);
   M5.Display.print("RAM:");
   M5.Display.print(ESP.getFreeHeap() / 1024);
-  M5.Display.print("KB Ignored:");
-  M5.Display.print(ignoreList.size());
+  M5.Display.print("KB");
   y += 16;
 
   M5.Display.drawLine(0, y, SCREEN_WIDTH, y, DARKGREY);
@@ -987,8 +1012,15 @@ void toggleBrightness() {
 }
 
 void saveDeviceData() {
+  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+    return;
+  }
+
   File file = SPIFFS.open("/devices.txt", FILE_WRITE);
-  if (!file) return;
+  if (!file) {
+    xSemaphoreGive(deviceMutex);
+    return;
+  }
 
   for (int i = 0; i < deviceIndex; i++) {
     file.print(trackedDevices[i].address);
@@ -1001,12 +1033,19 @@ void saveDeviceData() {
   }
 
   file.close();
+  xSemaphoreGive(deviceMutex);
 }
 
 void clearDevices() {
+  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+    return;
+  }
+
   deviceIndex = 0;
   scrollIndex = 0;
   SPIFFS.remove("/devices.txt");
+
+  xSemaphoreGive(deviceMutex);
 }
 
 void shutdownDevice() {
@@ -1240,154 +1279,112 @@ void handleButtonCombination() {
   }
 }
 
-void loadDeviceData() {
-  Serial.println("loadDeviceData START");
-  
-  if (!SPIFFS.exists("/devices.txt")) {
-    Serial.println("devices.txt does not exist");
-    deviceIndex = 0;
-    return;
-  }
+// SCANNING TASK - Runs on Core 0
+void scanTask(void *parameter) {
+  Serial.println("scanTask started on Core 0");
 
-  File file = SPIFFS.open("/devices.txt", FILE_READ);
-  if (!file) {
-    Serial.println("Failed to open devices.txt");
-    return;
-  }
-
-  deviceIndex = 0;
-  char line[256];
-  int lineIdx = 0;
-  int bytesRead = 0;
-
-  while (file.available() && deviceIndex < MAX_DEVICES) {
-    int c = file.read();
-    bytesRead++;
-
-    if (bytesRead % 256 == 0) {
-      vTaskDelay(2 / portTICK_PERIOD_MS);
-    }
-
-    if (c == '\n') {
-      if (lineIdx > 0) {
-        line[lineIdx] = '\0';
-        parseLine(line);
-        lineIdx = 0;
-      }
-    } else if (c >= 32 && c < 127 || c == ':' || c == '.') {
-      if (lineIdx < 255) {
-        line[lineIdx++] = (char)c;
-      }
-    }
-  }
-
-  if (lineIdx > 0) {
-    line[lineIdx] = '\0';
-    parseLine(line);
-  }
-
-  file.close();
-  Serial.print("loadDeviceData COMPLETE: ");
-  Serial.println(deviceIndex);
-}
-
-void parseLine(const char *line) {
-  if (!line || strlen(line) == 0) return;
-
-  int comma1 = -1, comma2 = -1, comma3 = -1;
-  int len = strlen(line);
-
-  for (int i = 0; i < len; i++) {
-    if (line[i] == ',') {
-      if (comma1 == -1) comma1 = i;
-      else if (comma2 == -1) comma2 = i;
-      else if (comma3 == -1) comma3 = i;
-    }
-  }
-
-  if (comma1 <= 0 || comma2 <= comma1) return;
-
-  memset(&trackedDevices[deviceIndex], 0, sizeof(DeviceInfo));
-
-  strncpy(trackedDevices[deviceIndex].address, line, comma1);
-  trackedDevices[deviceIndex].address[comma1] = '\0';
-
-  char lastSeenStr[32], countStr[32], scoreStr[32];
-  
-  strncpy(lastSeenStr, line + comma1 + 1, comma2 - comma1 - 1);
-  lastSeenStr[comma2 - comma1 - 1] = '\0';
-  trackedDevices[deviceIndex].lastSeen = (unsigned long)atol(lastSeenStr);
-
-  if (comma3 > 0) {
-    strncpy(countStr, line + comma2 + 1, comma3 - comma2 - 1);
-    countStr[comma3 - comma2 - 1] = '\0';
-    trackedDevices[deviceIndex].totalCount = atoi(countStr);
-
-    strncpy(scoreStr, line + comma3 + 1, len - comma3 - 1);
-    scoreStr[len - comma3 - 1] = '\0';
-    trackedDevices[deviceIndex].persistenceScore = atof(scoreStr);
+  esp_err_t wdt_result = esp_task_wdt_delete(NULL);
+  if (wdt_result == ESP_OK) {
+    Serial.println("Watchdog disabled for scan task");
   } else {
-    trackedDevices[deviceIndex].totalCount = atoi(lastSeenStr + comma2 - comma1);
-    trackedDevices[deviceIndex].persistenceScore = 0.0f;
+    Serial.println("Scan task was not registered to watchdog (expected)");
   }
 
-  String mfg = getManufacturer(trackedDevices[deviceIndex].address);
-  strncpy(trackedDevices[deviceIndex].manufacturer, mfg.c_str(), 30);
-  trackedDevices[deviceIndex].manufacturer[30] = '\0';
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
+  Serial.println("scanTask beginning scans");
 
-  trackedDevices[deviceIndex].firstSeen = trackedDevices[deviceIndex].lastSeen;
-  trackedDevices[deviceIndex].isSpecial =
-      isSpecialMac(trackedDevices[deviceIndex].address);
+  unsigned long lastScanSwitch = 0;
+  const unsigned long SCAN_SWITCH_INTERVAL = 3000;
+  bool localScanningWiFi = true;
 
-  deviceIndex++;
-}
-
-void loadIgnoreList() {
-  Serial.println("loadIgnoreList START");
-  
-  if (!SPIFFS.exists("/ignore_list.txt")) {
-    Serial.println("ignore_list.txt does not exist");
-    return;
-  }
-
-  File file = SPIFFS.open("/ignore_list.txt", FILE_READ);
-  if (!file) {
-    Serial.println("Failed to open ignore_list.txt");
-    return;
-  }
-
-  char buffer[32];
-  int bufIdx = 0;
-  int bytesRead = 0;
-  
-  while (file.available() && ignoreList.size() < 100) {
-    int c = file.read();
-    bytesRead++;
-    
-    if (bytesRead % 128 == 0) {
-      vTaskDelay(1 / portTICK_PERIOD_MS);
+  while (scanTaskRunning) {
+    if (paused) {
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+      continue;
     }
 
-    if (c == '\n' || c == '\r') {
-      if (bufIdx > 0) {
-        buffer[bufIdx] = '\0';
-        String mac(buffer);
-        mac.trim();
-        if (mac.length() > 0) {
-          ignoreList.insert(mac);
+    unsigned long currentMillis = millis();
+    unsigned long currentTime = currentMillis / 1000;
+
+    // Switch between WiFi and BLE scanning
+    if (currentMillis - lastScanSwitch > SCAN_SWITCH_INTERVAL) {
+      localScanningWiFi = !localScanningWiFi;
+      lastScanSwitch = currentMillis;
+
+      // Update global flag with mutex
+      if (xSemaphoreTake(deviceMutex, portMAX_DELAY) == pdTRUE) {
+        scanningWiFi = localScanningWiFi;
+        xSemaphoreGive(deviceMutex);
+      }
+    }
+
+    if (localScanningWiFi) {
+      // WiFi Scan (blocking)
+      int n = WiFi.scanNetworks(false, false, false, 300);
+
+      if (xSemaphoreTake(deviceMutex, portMAX_DELAY) == pdTRUE) {
+        for (int i = 0; i < n; i++) {
+          trackWiFiDevice(WiFi.SSID(i).c_str(), WiFi.BSSIDstr(i).c_str(),
+                          WiFi.RSSI(i), WiFi.channel(i), WiFi.encryptionType(i),
+                          currentTime);
+          vTaskDelay(1 / portTICK_PERIOD_MS);
         }
-        bufIdx = 0;
+        xSemaphoreGive(deviceMutex);
       }
-    } else if (c >= 32 && c < 127) {
-      if (bufIdx < 31) {
-        buffer[bufIdx++] = (char)c;
+      WiFi.scanDelete();
+
+    } else {
+      // BLE Scan (blocking)
+      BLEScanResults *foundDevicesPtr = pBLEScan->start(2, false);
+
+      if (foundDevicesPtr) {
+        bool newTrackerFound = false;
+        int alertDeviceIdx = -1;
+
+        if (xSemaphoreTake(deviceMutex, portMAX_DELAY) == pdTRUE) {
+          int count = foundDevicesPtr->getCount();
+          for (int i = 0; i < count; i++) {
+            BLEAdvertisedDevice device = foundDevicesPtr->getDevice(i);
+            String macAddr = device.getAddress().toString().c_str();
+
+            if (!isAllowlistedMac(macAddr.c_str())) {
+              if (trackDevice(macAddr.c_str(), device.getRSSI(), currentTime,
+                              device.getName().c_str())) {
+                newTrackerFound = true;
+                alertDeviceIdx = 0;
+              }
+            }
+            vTaskDelay(1 / portTICK_PERIOD_MS);
+          }
+          xSemaphoreGive(deviceMutex);
+        }
+
+        if (newTrackerFound && alertDeviceIdx >= 0) {
+          if (xSemaphoreTake(deviceMutex, portMAX_DELAY) == pdTRUE) {
+            if (deviceIndex > 0) {
+              alertUser(trackedDevices[0].isSpecial, trackedDevices[0].name,
+                        trackedDevices[0].address, trackedDevices[0].persistenceScore);
+            }
+            xSemaphoreGive(deviceMutex);
+          }
+        }
+
+        pBLEScan->clearResults();
       }
     }
+
+    // Clean up old entries periodically
+    if (xSemaphoreTake(deviceMutex, portMAX_DELAY) == pdTRUE) {
+      removeOldEntries(currentTime);
+      removeOldWiFiEntries(currentTime);
+      xSemaphoreGive(deviceMutex);
+    }
+
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 
-  file.close();
-  Serial.print("loadIgnoreList COMPLETE: ");
-  Serial.println(ignoreList.size());
+  Serial.println("scanTask terminated");
+  vTaskDelete(NULL);
 }
 
 void setup() {
@@ -1422,36 +1419,87 @@ void setup() {
 
   Serial.println("SPIFFS initialized");
 
-  loadIgnoreList();
-  Serial.println("Ignore list loaded");
+  // NOTE: To ignore specific devices, add their MAC prefixes to allowlistMacs[] array above
+  Serial.println("Skipping ignore list - use allowlistMacs[] array instead");
 
-  loadDeviceData();
-  Serial.println("Device data loaded");
+  // Create mutex for thread-safe access to device arrays
+  deviceMutex = xSemaphoreCreateMutex();
+  if (deviceMutex == NULL) {
+    Serial.println("ERROR: Failed to create mutex!");
+    while (1) { delay(1000); }
+  }
+  Serial.println("Mutex created");
 
   displayStartupMessage();
   Serial.println("Startup message displayed");
 
   delay(2000);
 
-  displayTrackedDevices();
-  Serial.println("Setup complete");
+  M5.Display.fillScreen(BLACK);
+  drawTopBar();
+
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(DARKGREY);
+  M5.Display.setCursor(60, 60);
+  M5.Display.print("Starting scans...");
+  Serial.println("Initial display ready");
+
+
+  xTaskCreatePinnedToCore(
+    scanTask,          // Task function
+    "ScanTask",        // Task name
+    8192,              // Stack size (bytes)
+    NULL,              // Parameters
+    1,                 // Priority 
+    &scanTaskHandle,   // Task handle
+    0                  // Core 0 (Core 1 is for loop)
+  );
+  Serial.println("Scanning task started on Core 0");
+
+  delay(100);
+
+  // Initialize activity timer to prevent immediate screen timeout
+  lastActivityTime = millis();
+  lastButtonPressTime = millis();
+
+  Serial.println("PathShield setup complete");
 }
 
 void loop() {
-  M5.update();
   unsigned long currentMillis = millis();
+  static unsigned long lastDisplayUpdate = 0;
+  static bool firstRun = true;
+  const unsigned long DISPLAY_UPDATE_INTERVAL = 1000;
 
-  // ALWAYS wake screen on ANY button press
-  if (M5.BtnA.wasPressed() || M5.BtnB.wasPressed()) {
+  if (firstRun) {
+    M5.Display.setBrightness(highBrightness ? 204 : 77);
+    screenOn = true;
+
+    delay(200);
+    displayTrackedDevices();
+    lastDisplayUpdate = currentMillis;
+    firstRun = false;
+  }
+
+  bool btnA = M5.BtnA.wasPressed();
+  bool btnB = M5.BtnB.wasPressed();
+
+  M5.update();
+
+  if ((btnA || btnB) && !screenOn) {
+    screenOn = true;
     lastActivityTime = currentMillis;
     lastButtonPressTime = currentMillis;
-    if (!screenOn) {
-      screenOn = true;
-      M5.Display.setBrightness(highBrightness ? 204 : 77);
-      screenDimmed = false;
-      vTaskDelay(50 / portTICK_PERIOD_MS);
-      return;  // Exit early to prevent double-triggering
-    }
+    M5.Display.setBrightness(highBrightness ? 204 : 77);
+    screenDimmed = false;
+    displayTrackedDevices();
+    lastDisplayUpdate = currentMillis; // Reset display timer
+    return;
+  }
+
+  if (btnA || btnB) {
+    lastActivityTime = currentMillis;
+    lastButtonPressTime = currentMillis;
   }
 
   if (checkButtonCombo()) {
@@ -1460,16 +1508,18 @@ void loop() {
   }
 
   if (!inMenu) {
-    if (M5.BtnA.wasPressed() && (currentMillis - lastBtnAPress > DEBOUNCE_DELAY)) {
+    if (btnA && (currentMillis - lastBtnAPress > DEBOUNCE_DELAY)) {
       lastBtnAPress = currentMillis;
       handleBtnA();
+      lastDisplayUpdate = currentMillis;
       vTaskDelay(10 / portTICK_PERIOD_MS);
       return;
     }
 
-    if (M5.BtnB.wasPressed() && (currentMillis - lastBtnBPress > DEBOUNCE_DELAY)) {
+    if (btnB && (currentMillis - lastBtnBPress > DEBOUNCE_DELAY)) {
       lastBtnBPress = currentMillis;
       handleBtnB();
+      lastDisplayUpdate = currentMillis;
       vTaskDelay(10 / portTICK_PERIOD_MS);
       return;
     }
@@ -1480,75 +1530,29 @@ void loop() {
     M5.Display.setBrightness(0);
   }
 
-  if (screenOn && !screenDimmed && highBrightness && 
+  if (screenOn && !screenDimmed && highBrightness &&
       currentMillis - lastButtonPressTime > IDLE_TIMEOUT) {
     highBrightness = false;
     M5.Display.setBrightness(77);
     screenDimmed = true;
   }
 
-  if (paused) {
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    return;
-  }
-
-  if (currentMillis - lastScanSwitch > SCAN_SWITCH_INTERVAL) {
-    scanningWiFi = !scanningWiFi;
-    lastScanSwitch = currentMillis;
-  }
-
-  unsigned long currentTime = currentMillis / 1000;
-
-  if (scanningWiFi) {
-    int n = WiFi.scanNetworks(false, false, false, 300);
-    for (int i = 0; i < n; i++) {
-      trackWiFiDevice(WiFi.SSID(i).c_str(), WiFi.BSSIDstr(i).c_str(),
-                      WiFi.RSSI(i), WiFi.channel(i), WiFi.encryptionType(i),
-                      currentTime);
-      vTaskDelay(1 / portTICK_PERIOD_MS);
-    }
-    WiFi.scanDelete();
-  } else {
-    BLEScanResults *foundDevicesPtr = pBLEScan->start(2, false);
-    if (foundDevicesPtr) {
-      bool newTrackerFound = false;
-
-      int count = foundDevicesPtr->getCount();
-      for (int i = 0; i < count; i++) {
-        BLEAdvertisedDevice device = foundDevicesPtr->getDevice(i);
-        String macAddr = device.getAddress().toString().c_str();
-
-        if (ignoreList.find(macAddr) == ignoreList.end() &&
-            !isAllowlistedMac(macAddr.c_str())) {
-          if (trackDevice(macAddr.c_str(), device.getRSSI(), currentTime,
-                          device.getName().c_str())) {
-            newTrackerFound = true;
-          }
-        }
-        vTaskDelay(1 / portTICK_PERIOD_MS);
-      }
-
-      if (newTrackerFound && deviceIndex > 0) {
-        alertUser(trackedDevices[0].isSpecial, trackedDevices[0].name,
-                  trackedDevices[0].address, trackedDevices[0].persistenceScore);
-      }
-
-      pBLEScan->clearResults();
-    }
-  }
-
-  if (screenOn) {
+  // Refresh display periodically
+  if (screenOn && currentMillis - lastDisplayUpdate >= DISPLAY_UPDATE_INTERVAL) {
     displayTrackedDevices();
+    lastDisplayUpdate = currentMillis;
   }
 
-  removeOldEntries(currentTime);
-  removeOldWiFiEntries(currentTime);
+  // Paused or screen off
+  if (paused || !screenOn) {
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+  } else {
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+  }
 
   static unsigned long lastSaveTime = 0;
   if (currentMillis - lastSaveTime > 60000) {
     saveDeviceData();
     lastSaveTime = currentMillis;
   }
-
-  vTaskDelay(50 / portTICK_PERIOD_MS);
 }
