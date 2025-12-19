@@ -67,6 +67,7 @@ unsigned long screenTimeoutMs = DEFAULT_SCREEN_TIMEOUT;
 volatile bool deviceDataChanged = false;
 static uint32_t lastStateHash = 0;
 unsigned long lastDisplayRender = 0;
+unsigned long lastMenuRender = 0;
 
 bool alertActive = false;
 unsigned long alertStartTime = 0;
@@ -771,12 +772,6 @@ void displayTrackedDevices() {
   lastStateHash = currentHash;
   lastDisplayRender = now;
 
-  xSemaphoreGive(deviceMutex);
-
-  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
-    return;
-  }
-
   M5.Display.fillScreen(BLACK);
   drawTopBar();
 
@@ -975,10 +970,10 @@ void displayTrackedDevices() {
 void displayMenuScreen() {
   unsigned long now = millis();
 
-  if (now - lastDisplayRender < 500) {
+  if (now - lastMenuRender < 500) {
     return;
   }
-  lastDisplayRender = now;
+  lastMenuRender = now;
 
   M5.Display.fillScreen(BLACK);
   M5.Display.setCursor(2, 2);
@@ -1241,8 +1236,8 @@ void executeMenuOption(int index) {
       shutdownDevice();
       return;
   }
-
-  inMenu = true;
+  
+  forceDisplayRefresh();
   displayMenuScreen();
   highlightMenuOption(menuIndex);
 }
@@ -1285,20 +1280,11 @@ void handleBtnA() {
   lastButtonPressTime = millis();
   lastActivityTime = millis();
 
-  if (!screenOn) {
-    screenOn = true;
-    currentlyBright = true;
-    M5.Display.setBrightness(highBrightness ? 204 : 77);
-    screenDimmed = false;
-    lastDisplayRender = 0;  // Force immediate display update
-    lastStateHash = 0;
-    displayTrackedDevices();
-    return;
-  }
-
   if (paused) {
     if (scrollIndex > 0) {
       scrollIndex--;
+      lastStateHash = 0; 
+      lastDisplayRender = 0;
       displayTrackedDevices();
     }
   } else {
@@ -1306,36 +1292,15 @@ void handleBtnA() {
     scrollIndex = 0;
     showFeedback("PAUSED", RED, "Hold B to Resume");
     delay(1500);
+    lastStateHash = 0;
+    lastDisplayRender = 0;
     displayTrackedDevices();
   }
 }
 
 void handleBtnB() {
   lastButtonPressTime = millis();
-
-  if (screenDimmed) {
-    screenOn = true;
-    currentlyBright = true;
-    M5.Display.setBrightness(highBrightness ? 204 : 77);
-    screenDimmed = false;
-    lastActivityTime = millis();
-    lastDisplayRender = 0;  // Force immediate display update
-    lastStateHash = 0;
-    displayTrackedDevices();
-    return;
-  }
-
-  if (!screenOn) {
-    screenOn = true;
-    currentlyBright = true;
-    M5.Display.setBrightness(highBrightness ? 204 : 77);
-    screenDimmed = false;
-    lastActivityTime = millis();
-    lastDisplayRender = 0;  // Force immediate display update
-    lastStateHash = 0;
-    displayTrackedDevices();
-    return;
-  }
+  lastActivityTime = millis();
 
   if (paused) {
     unsigned long pressStart = millis();
@@ -1350,12 +1315,16 @@ void handleBtnB() {
       scrollIndex = 0;
       showFeedback("RESUMED", GREEN);
       delay(800);
+      lastStateHash = 0;
+      lastDisplayRender = 0;
       displayTrackedDevices();
     } else {
       int maxScroll = scanningWiFi ? wifiDeviceIndex - 3 : deviceIndex - 3;
       if (maxScroll < 0) maxScroll = 0;
       if (scrollIndex < maxScroll) {
         scrollIndex++;
+        lastStateHash = 0;
+        lastDisplayRender = 0;
         displayTrackedDevices();
       }
     }
@@ -1364,59 +1333,21 @@ void handleBtnB() {
     showFeedback(filterByName ? "NAMED ONLY" : "SHOW ALL",
                  filterByName ? CYAN : ORANGE);
     delay(800);
+    lastStateHash = 0;
+    lastDisplayRender = 0;
     displayTrackedDevices();
   }
 }
 
+void forceDisplayRefresh() {
+  lastStateHash = 0;
+  lastDisplayRender = 0;
+  lastMenuRender = 0;
+}
+
 void handleButtonCombination() {
   inMenu = !inMenu;
-
-  if (inMenu) {
-    menuIndex = 0;
-    displayMenuScreen();
-    highlightMenuOption(menuIndex);
-
-    while (M5.BtnA.isPressed() || M5.BtnB.isPressed()) {
-      M5.update();
-      delay(10);
-    }
-
-    while (inMenu) {
-      M5.update();
-      delay(50);
-
-      if (M5.BtnA.isPressed() && M5.BtnB.isPressed()) {
-        delay(200);
-        while (M5.BtnA.isPressed() || M5.BtnB.isPressed()) {
-          M5.update();
-          delay(10);
-        }
-        inMenu = false;
-        lastActivityTime = millis();
-        
-        M5.Display.fillScreen(BLACK);
-        drawTopBar();
-        
-        // Force state reset for next render
-        lastDisplayRender = millis();
-        lastStateHash = 0;
-        
-        break;
-      }
-
-      if (M5.BtnA.wasPressed()) {
-        menuIndex = (menuIndex + 1) % 4;
-        displayMenuScreen();
-        highlightMenuOption(menuIndex);
-        delay(200);
-      }
-
-      if (M5.BtnB.wasPressed()) {
-        executeMenuOption(menuIndex);
-        delay(200);
-      }
-    }
-  }
+  lastActivityTime = millis();
 }
 
 // SCANNING TASK - Runs on Core 0
@@ -1654,9 +1585,11 @@ void setup() {
 
   // Load user preferences (brightness, timeout, etc.)
   loadUserPreferences();
-  currentlyBright = highBrightness;  // Initialize current brightness to match user preference
+  currentlyBright = highBrightness;
   Serial.print("User preferences loaded - Brightness: ");
   Serial.println(highBrightness ? "High" : "Low");
+  Serial.print("Screen Timeout: ");
+  Serial.println(screenTimeoutMs);
 
   deviceMutex = xSemaphoreCreateMutex();
   if (deviceMutex == NULL) {
@@ -1676,21 +1609,19 @@ void setup() {
   M5.Display.print("Starting scans...");
   Serial.println("Initial display ready");
 
-
   xTaskCreatePinnedToCore(
-    scanTask,          // Task function
-    "ScanTask",        // Task name
-    8192,              // Stack size (bytes)
-    NULL,              // Parameters
-    1,                 // Priority 
-    &scanTaskHandle,   // Task handle
-    0                  // Core 0 (Core 1 is for loop)
+    scanTask,
+    "ScanTask",
+    8192,
+    NULL,
+    1,
+    &scanTaskHandle,
+    0
   );
   Serial.println("Scanning task started on Core 0");
 
   delay(100);
 
-  // Initialize activity timer to prevent immediate screen timeout
   lastActivityTime = millis();
   lastButtonPressTime = millis();
 
@@ -1734,82 +1665,119 @@ void loop() {
     displayTrackedDevices();
     lastDisplayUpdate = currentMillis;
     firstRun = false;
+    return;
   }
 
   bool btnA = M5.BtnA.wasPressed();
   bool btnB = M5.BtnB.wasPressed();
 
-  // Wake it up
+  // WAKE SCREEN ON ANY BUTTON
   if ((btnA || btnB) && !screenOn) {
     screenOn = true;
-    currentlyBright = true;
-    lastActivityTime = currentMillis;
-    lastButtonPressTime = currentMillis;
-    M5.Display.setBrightness(highBrightness ? 204 : 77);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
     screenDimmed = false;
+    currentlyBright = highBrightness;
+    lastActivityTime = currentMillis;
+    M5.Display.setBrightness(highBrightness ? 204 : 77);
     lastStateHash = 0;
     lastDisplayRender = 0;
-    displayTrackedDevices();
+    lastMenuRender = 0;
+    lastBtnAPress = currentMillis;
+    lastBtnBPress = currentMillis;
+
+    if (inMenu) {
+      displayMenuScreen();
+      highlightMenuOption(menuIndex);
+    } else {
+      displayTrackedDevices();
+    }
     lastDisplayUpdate = currentMillis;
     return;
   }
 
   if (btnA || btnB) {
     lastActivityTime = currentMillis;
-    lastButtonPressTime = currentMillis;
+    screenDimmed = false;
+    currentlyBright = highBrightness;
+    M5.Display.setBrightness(highBrightness ? 204 : 77);
   }
 
-  if (checkButtonCombo()) {
-    handleButtonCombination();
+  // MENU COMBO CHECK (both buttons)
+  if (screenOn && checkButtonCombo()) {
+    inMenu = !inMenu;
+    lastActivityTime = currentMillis;
+    lastDisplayRender = 0;
+    lastMenuRender = 0;
+    lastStateHash = 0;
+
+    if (inMenu) {
+      menuIndex = 0;
+      displayMenuScreen();
+      highlightMenuOption(menuIndex);
+    } else {
+      displayTrackedDevices();
+    }
+    lastDisplayUpdate = currentMillis;
     return;
   }
 
-  if (!inMenu) {
-    if (btnA && (currentMillis - lastBtnAPress > DEBOUNCE_DELAY)) {
-      lastBtnAPress = currentMillis;
-      handleBtnA();
-      lastDisplayUpdate = currentMillis;
-      vTaskDelay(10 / portTICK_PERIOD_MS);
-      return;
-    }
-
-    if (btnB && (currentMillis - lastBtnBPress > DEBOUNCE_DELAY)) {
-      lastBtnBPress = currentMillis;
-      handleBtnB();
-      lastDisplayUpdate = currentMillis;
-      vTaskDelay(10 / portTICK_PERIOD_MS);
-      return;
+  // HANDLE INPUT BASED ON MODE
+  if (screenOn) {
+    if (inMenu) {
+      // MENU MODE
+      if (btnA && (currentMillis - lastBtnAPress > DEBOUNCE_DELAY)) {
+        lastBtnAPress = currentMillis;
+        menuIndex = (menuIndex + 1) % 4;
+        highlightMenuOption(menuIndex);
+        return;
+      }
+      if (btnB && (currentMillis - lastBtnBPress > DEBOUNCE_DELAY)) {
+        lastBtnBPress = currentMillis;
+        executeMenuOption(menuIndex);
+        return;
+      }
+    } else {
+      // NORMAL MODE
+      if (btnA && (currentMillis - lastBtnAPress > DEBOUNCE_DELAY)) {
+        lastBtnAPress = currentMillis;
+        handleBtnA();
+        return;
+      }
+      if (btnB && (currentMillis - lastBtnBPress > DEBOUNCE_DELAY)) {
+        lastBtnBPress = currentMillis;
+        handleBtnB();
+        return;
+      }
     }
   }
 
-  unsigned long dimThreshold =
-      min(screenTimeoutMs * 3 / 4, screenTimeoutMs - 5000);
+  // SCREEN TIMEOUT LOGIC
+  unsigned long dimThreshold = min(screenTimeoutMs * 3 / 4, screenTimeoutMs - 5000);
   if (dimThreshold < 5000) dimThreshold = screenTimeoutMs / 2;
 
   if (screenOn && !screenDimmed && currentlyBright &&
       currentMillis - lastActivityTime > dimThreshold) {
     currentlyBright = false;
-    M5.Display.setBrightness(10);
     screenDimmed = true;
+    M5.Display.setBrightness(10);
   }
 
   if (screenOn && currentMillis - lastActivityTime > screenTimeoutMs) {
     screenOn = false;
-    currentlyBright = false;
-    M5.Display.setBrightness(10);
+    M5.Display.setBrightness(0);
   }
 
+  // PERIODIC DISPLAY UPDATE
   if (screenOn && currentMillis - lastDisplayUpdate >= DISPLAY_UPDATE_INTERVAL) {
-    displayTrackedDevices();
+    if (inMenu) {
+      displayMenuScreen();
+      highlightMenuOption(menuIndex);
+    } else {
+      displayTrackedDevices();
+    }
     lastDisplayUpdate = currentMillis;
   }
 
-  if (paused || !screenOn) {
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  } else {
-    vTaskDelay(50 / portTICK_PERIOD_MS);
-  }
+  vTaskDelay(50 / portTICK_PERIOD_MS);
 
   static unsigned long lastSaveTime = 0;
   if (currentMillis - lastSaveTime > 60000) {
