@@ -1473,28 +1473,83 @@ void setup() {
 
   if (!SPIFFS.begin(false)) {
     Serial.println("SPIFFS corrupted, formatting...");
-    
+
     M5.Display.fillScreen(BLACK);
-    M5.Display.setTextSize(2);
+    for (int i = 0; i < 15; i++) {
+      M5.Display.drawFastHLine(random(0, SCREEN_WIDTH), random(0, SCREEN_HEIGHT),
+                               random(5, 40), random(0x0000, 0x1111));
+    }
+
+    M5.Display.drawFastHLine(0, 25, SCREEN_WIDTH, MAGENTA);
+    M5.Display.drawFastHLine(0, 26, SCREEN_WIDTH, MAGENTA);
+
+    M5.Display.setTextSize(3);
     M5.Display.setTextColor(YELLOW);
-    M5.Display.setCursor(20, 50);
+    M5.Display.setCursor(25, 35);
     M5.Display.print("SPIFFS");
-    M5.Display.setCursor(10, 75);
-    M5.Display.print("Formatting...");
-    
+
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(ORANGE);
+    M5.Display.setCursor(55, 60);
+    M5.Display.print("FORMATTING...");
+
+    M5.Display.drawFastHLine(0, 75, SCREEN_WIDTH, CYAN);
+    M5.Display.drawFastHLine(0, 76, SCREEN_WIDTH, CYAN);
+
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(DARKGREY);
+    M5.Display.setCursor(35, 90);
+    M5.Display.print("Please wait...");
+
     SPIFFS.format();
     delay(100);
-    
+
     if (!SPIFFS.begin(false)) {
       Serial.println("SPIFFS mount failed critically");
-      M5.Display.fillScreen(RED);
-      M5.Display.setTextSize(2);
-      M5.Display.setTextColor(WHITE);
-      M5.Display.setCursor(10, 50);
+      M5.Display.fillScreen(BLACK);
+
+      for (int i = 0; i < 20; i++) {
+        M5.Display.drawFastHLine(random(0, SCREEN_WIDTH), random(0, SCREEN_HEIGHT),
+                                 random(5, 40), random(0x0000, 0x1111));
+      }
+
+      M5.Display.drawFastHLine(0, 25, SCREEN_WIDTH, RED);
+      M5.Display.drawFastHLine(0, 26, SCREEN_WIDTH, RED);
+
+      M5.Display.setTextSize(3);
+      M5.Display.setTextColor(RED);
+      M5.Display.setCursor(40, 40);
+      M5.Display.print("ERROR");
+
+      M5.Display.setTextSize(1);
+      M5.Display.setTextColor(YELLOW);
+      M5.Display.setCursor(30, 70);
       M5.Display.print("SPIFFS FAILED");
+
+      M5.Display.drawFastHLine(0, 85, SCREEN_WIDTH, RED);
+      M5.Display.drawFastHLine(0, 86, SCREEN_WIDTH, RED);
+
+      M5.Display.setTextColor(DARKGREY);
+      M5.Display.setCursor(50, 100);
+      M5.Display.print("Reboot needed");
+
       while(1) delay(1000);
       return;
     }
+
+    // Show success message
+    M5.Display.fillScreen(BLACK);
+    for (int i = 0; i < 15; i++) {
+      M5.Display.drawFastHLine(random(0, SCREEN_WIDTH), random(0, SCREEN_HEIGHT),
+                               random(5, 40), random(0x0000, 0x1111));
+    }
+    M5.Display.drawFastHLine(0, 35, SCREEN_WIDTH, GREEN);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(GREEN);
+    M5.Display.setCursor(35, 50);
+    M5.Display.print("SUCCESS!");
+    M5.Display.drawFastHLine(0, 70, SCREEN_WIDTH, GREEN);
+    delay(800);
   }
 
   Serial.println("SPIFFS initialized");
