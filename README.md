@@ -1,7 +1,7 @@
 <div align="center">
 <img height="500" alt="image" src="https://github.com/user-attachments/assets/0dac6a9f-32a8-4b05-b6a1-b59fc3762f51" />
 
-PathShield is an RF awareness tool for M5StickC Plus (v1 & v2). It uses BLE/WiFI scanning to detect devices, alerting on those following you.
+PathShield is an RF awareness tool for M5StickC-Plus (v1 & v2). It uses BLE/WiFI scanning to detect devices, alerting on those following you.
 </div>
 
 
@@ -26,13 +26,13 @@ PathShield is an RF awareness tool for M5StickC Plus (v1 & v2). It uses BLE/WiFI
 10. [License](#license)
 
 
-
 ## Features
 
-- **Dual-Band Scanning**: Alternates WiFi and BLE detection, displays MAC, vendor, SSID, channel, hit count & RSSI. 
+- **Dual-Band Scanning**: Alternates WiFi and BLE detection, displays MAC, vendor, SSID, channel, hit count & RSSI.
 - **Persistence Scoring**: Multi-factor algorithm reduces false positives. Allowlist for known devices.
 - **Real-Time Alerts**: Visual notifications for detected trackers and user specified MAC targets
-- **5000+ MAC Database**: Automatic offline manufacturer identification
+- **24,500+ MAC Database**: Offline manufacturer identification (WiFi/BLE + consumer/IoT devices)
+- **Efficient Updates**: Only redraws display when data changes (reduces power draw)
 
 > [!TIP]
 > Modify `allowlistMacs` to ignore known devices. Change the `specialMacs` to your own target devices (default detects Flock and Axon Taser cameras).
@@ -63,9 +63,9 @@ PathShield is an RF awareness tool for M5StickC Plus (v1 & v2). It uses BLE/WiFI
 
 ### Normal Scanning Mode
 ```
-Button A Hold:   Pause scanning
-Button B Hold:   Toggle name filter
-A+B (hold):      Settings menu
+Button A:   Pause scanning
+Button B:   Toggle name filter
+A+B (hold): Settings menu
 ```
 
 ### Paused 
@@ -77,50 +77,49 @@ Button B hold: Resume (hold 1 second)
 
 ### Settings Menu
 ```
-Button A:  Navigate options
+Button A:  Navigate options (up/down)
 Button B:  Select option
 A+B hold:  Exit menu
-
----Settings---
-- Brightness Low/High
-- Clear Devices
-- Shutdown Device
 ```
+
+**Available Settings:**
+- **Brightness**: Low/High (saves battery on low brightness)
+- **Clear Devices**: Clears all tracked devices from memory
+- **Display Timeout**: How long before screen turns off when idle (10-60 seconds)
+- **Shutdown Device**: Power off the device
 
 ## Display Guide
 
-### Header
-- **Scan Status**: SCAN (green), PAUSE (red), WiFi/BLE mode
-- **Device Count**: Total tracked devices or access points
-- **[F]**: Filter active (named devices only)
+### Top Status Bar
+- **Scan Mode**: `SCAN` (green = actively scanning), `PAUSE` (red = paused)
+- **WiFi/BLE Indicator**: Current scan mode (WiFi or Bluetooth)
+- **Battery Bar**: Device battery percentage (0-100%)
+- **Memory Bar**: Available RAM in KB (green = good, yellow = warning, red = critical)
+
+### Device List
+Each device shows:
+```
+Device Name (BLE) or SSID (WiFi)
+Manufacturer (identified from MAC)
+Detection Count + Signal Strength (RSSI)
+```
 
 ### Color Codes
 ```
-CYAN    = WiFi access points / Normal BLE
-ORANGE  = User defined tracker (special MAC)
-RED     = Suspected tracker (persistence ≥ 0.65)
+CYAN    = WiFi networks / Normal Bluetooth devices
+ORANGE  = User-defined tracker (special MAC)
+RED     = Suspected tracker detected (high persistence score)
 YELLOW  = Manufacturer name
+GREEN   = Scan active, status messages
 ```
 
-### Device Information
-
-**BLE Devices:**
-```
-Line 1: Device name
-Line 2: Manufacturer from MAC lookup
-Line 3: Count/RSSI + MAC address
-```
-
-**WiFi Devices:**
-```
-Line 1: SSID or "Hidden"
-Line 2: Manufacturer from MAC lookup
-Line 3: Channel + Encryption + Count/RSSI + BSSID
-```
+### Filter Mode
+- Press **Button B** to toggle between "Show All" (all devices) and "Named Only" (only named devices)
+- Useful for cutting through noise when there are many unnamed devices
 
 ### Footer
-- Shows current page (1-3/23)
-- Scroll hint when paused
+- **Page counter**: Shows which page you're viewing (e.g., "1-3/23")
+- **Scroll hint**: When paused, shows navigation instructions
 
 ## Detection Algorithm
 
@@ -240,23 +239,20 @@ M5.Display.drawFastHLine(0, 0, SCREEN_WIDTH, MAGENTA);  // Border color
 
 ### Too Many False Positives
 
-**Solution 1: Add to ignore list**
-```
-1. Note MAC address from display
-2. Add to ignore_list.txt
-3. Re-upload SPIFFS data
-4. Restart device
-```
+**Quick fix: Use name filter**
+- Press **Button B** to show only named devices
+- Hides random MAC addresses and noise
 
-**Solution 2: Raise threshold**
+**Persistent false positives: Add to allowlist**
+1. Note the MAC address from the display
+2. Add to `allowlistMacs[]` in PathShield.ino
+3. Re-upload and restart
+
+**Fine-tune sensitivity (advanced)**
 ```cpp
-#define PERSISTENCE_THRESHOLD 0.75
-#define MIN_DETECTIONS 12
+#define PERSISTENCE_THRESHOLD 0.75  // Raise to be more strict
+#define MIN_DETECTIONS 12           // Require more detections
 ```
-
-**Solution 3: Enable name filter**
-- Press Button B to show only named devices
-- Hides random MAC devices
 
 ### Cannot Resume from Pause
 
@@ -264,29 +260,27 @@ Hold Button B for 1 full second (not just tap).
 
 ### Device Crashes / Resets
 
-**Reduce memory usage:**
+**First try:** Lower sensitivity to reduce memory load
 ```cpp
-#define MAX_DEVICES 50          // Lower from 100
-WiFiDeviceInfo wifiDevices[25]; // Lower from 50
+#define MAX_DEVICES 50          // Reduce tracked devices
+#define MAX_WIFI_DEVICES 25     // Reduce WiFi scanning
 ```
 
-**Or disable WiFi scanning:**
+**Still crashing?** Disable WiFi scanning to use BLE only
 ```cpp
-bool scanningWiFi = false;  // Only scan BLE
+bool scanningWiFi = false;  // Only scan Bluetooth
 ```
+
+Watch the memory bar on screen—red means critically low.
 
 ### SPIFFS Upload Failed
 
-**Arduino IDE:**
-1. Close Serial Monitor
-2. Ensure correct partition scheme: Huge APP
-3. Re-install [ESP32 Filesystem Uploader](https://github.com/me-no-dev/arduino-esp32fs-plugin)
+1. Close Serial Monitor (it blocks uploads)
+2. Verify board: **M5Stick-C-Plus**
+3. Verify partition: **Huge APP (3MB No OTA/1MB SPIFFS)**
+4. Try again
 
-**Manual method:**
-```bash
-# Find SPIFFS offset (usually 0x290000 for Huge APP)
-esptool.py --port COM5 write_flash 0x290000 spiffs.bin
-```
+If still failing, use the [Web Flasher](https://lukeswitz.github.io/PathShield/) instead.
 
 ### Button Not Responding
 
