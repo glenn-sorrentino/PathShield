@@ -686,39 +686,25 @@ void displayTrackedDevices() {
   unsigned long now = millis();
   static bool lastScanMode = false;
 
-  // Force redraw if mode switched
-  if (lastScanMode != scanningWiFi) {
-    lastStateHash = 0;  // Invalidate hash
-    lastScanMode = scanningWiFi;
-  }
-
-  // Throttle
   if (now - lastRender < 300) {
-    return;
+    return; // bail, not time to render
   }
 
-  // Check if the state has actually changed
   uint32_t currentHash = getDisplayStateHash();
   if (currentHash == lastStateHash) {
-    return; // No change in data, skip rendering
+    return;
   }
 
   lastStateHash = currentHash;
   lastRender = now;
 
   M5.Display.fillScreen(BLACK);
-
   drawTopBar();
 
   int y = 15;
   int displayed = 0;
   const int maxDisplay = 3;
   int totalItems = 0;
-
-  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
-    // If we can't get the mutex quickly, just show the top bar
-    return;
-  }
 
   if (scanningWiFi) {
     totalItems = wifiDeviceIndex;
@@ -1467,9 +1453,30 @@ void setup() {
   Serial.println("BLE initialized");
   delay(200);
 
-  if (!SPIFFS.begin(true)) {
-    Serial.println("SPIFFS mount failed");
-    return;
+  if (!SPIFFS.begin(false)) {
+    Serial.println("SPIFFS corrupted, formatting...");
+    
+    M5.Display.fillScreen(BLACK);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(YELLOW);
+    M5.Display.setCursor(20, 50);
+    M5.Display.print("SPIFFS");
+    M5.Display.setCursor(10, 75);
+    M5.Display.print("Formatting...");
+    
+    SPIFFS.format();
+    delay(100);
+    
+    if (!SPIFFS.begin(false)) {
+      Serial.println("SPIFFS mount failed critically");
+      M5.Display.fillScreen(RED);
+      M5.Display.setTextSize(2);
+      M5.Display.setTextColor(WHITE);
+      M5.Display.setCursor(10, 50);
+      M5.Display.print("SPIFFS FAILED");
+      while(1) delay(1000);
+      return;
+    }
   }
 
   Serial.println("SPIFFS initialized");
