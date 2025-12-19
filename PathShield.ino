@@ -442,6 +442,11 @@ void removeOldEntries(unsigned long currentTime) {
 }
 
 void alertUser(bool isSpecial, const char *name, const char *mac, float persistence) {
+
+  screenOn = true;
+  lastActivityTime = millis();
+  M5.Display.setBrightness(204);
+  
   if (isSpecial) {
     for (int i = 0; i < 5; i++) {
       M5.Display.fillScreen(RED);
@@ -1032,8 +1037,8 @@ void executeMenuOption(int index) {
       delay(1000);
       break;
     case 1:
-      setScreenTimeout();
-      return;
+      cycleScreenTimeout();
+      break;
     case 2:
       clearDevices();
       M5.Display.fillScreen(BLACK);
@@ -1048,8 +1053,35 @@ void executeMenuOption(int index) {
       return;
   }
 
+  inMenu = true;
   displayMenuScreen();
   highlightMenuOption(menuIndex);
+}
+
+void cycleScreenTimeout() {
+  int timeoutOptions[] = {10000, 15000, 30000, 60000, 120000, 300000};
+  int optionCount = 6;
+  int currentIdx = 0;
+  
+  for (int i = 0; i < optionCount; i++) {
+    if (timeoutOptions[i] == screenTimeoutMs) {
+      currentIdx = i;
+      break;
+    }
+  }
+  
+  currentIdx = (currentIdx + 1) % optionCount;
+  screenTimeoutMs = timeoutOptions[currentIdx];
+  
+  M5.Display.fillScreen(BLACK);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(CYAN);
+  M5.Display.setCursor(20, 50);
+  M5.Display.print("Timeout:");
+  M5.Display.setCursor(50, 70);
+  M5.Display.print(screenTimeoutMs / 1000);
+  M5.Display.print("s");
+  delay(1000);
 }
 
 bool checkButtonCombo() {
