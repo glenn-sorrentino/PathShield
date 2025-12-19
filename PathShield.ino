@@ -62,6 +62,8 @@ unsigned long lastButtonPressTime = 0;
 unsigned long lastActivityTime = 0;
 bool screenOn = true;
 unsigned long screenTimeoutMs = DEFAULT_SCREEN_TIMEOUT;
+volatile bool deviceDataChanged = false;
+static uint32_t lastStateHash = 0;
 
 bool alertActive = false;
 unsigned long alertStartTime = 0;
@@ -645,13 +647,9 @@ void drawTopBar() {
   M5.Display.drawFastHLine(0, 12, SCREEN_WIDTH, CYAN);
 }
 
-// Generate a hash of the current display state to detect changes
+// Generate hashed display state
 uint32_t getDisplayStateHash() {
   uint32_t hash = 0;
-  
-  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(10)) != pdTRUE) {
-    return 0;  // Force redraw
-  }
   
   hash = deviceIndex * 31 + wifiDeviceIndex;
   hash = hash * 31 + scrollIndex;
@@ -660,46 +658,63 @@ uint32_t getDisplayStateHash() {
   hash = hash * 31 + (filterByName ? 1 : 0);
 
   if (scanningWiFi) {
-    for (int i = scrollIndex; i < wifiDeviceIndex && i < scrollIndex + 3; i++) {
-      hash = hash * 31 + wifiDevices[i].rssi;
+    for (int i = 0; i < wifiDeviceIndex; i++) {
+      hash = hash * 31 + (uint32_t)wifiDevices[i].rssi;
       hash = hash * 31 + wifiDevices[i].detectionCount;
+      hash = hash * 31 + wifiDevices[i].channel;
+      hash = hash * 31 + wifiDevices[i].encryptionType;
+      for (int j = 0; j < strlen(wifiDevices[i].ssid); j++) {
+        hash = hash * 31 + wifiDevices[i].ssid[j];
+      }
     }
   } else {
-    int filteredCount = 0;
     for (int i = 0; i < deviceIndex; i++) {
-      if (filterByName && strlen(trackedDevices[i].name) == 0) continue;
-      filteredCount++;
-    }
-    for (int i = scrollIndex; i < filteredCount && i < scrollIndex + 3; i++) {
       hash = hash * 31 + trackedDevices[i].totalCount;
-      hash = hash * 31 + trackedDevices[i].lastRssi;
+      hash = hash * 31 + (uint32_t)trackedDevices[i].lastRssi;
+      hash = hash * 31 + (trackedDevices[i].detected ? 1 : 0);
+      hash = hash * 31 + (trackedDevices[i].isSpecial ? 1 : 0);
+      for (int j = 0; j < strlen(trackedDevices[i].name); j++) {
+        hash = hash * 31 + trackedDevices[i].name[j];
+      }
+      for (int j = 0; j < strlen(trackedDevices[i].manufacturer); j++) {
+        hash = hash * 31 + trackedDevices[i].manufacturer[j];
+      }
     }
   }
 
-  xSemaphoreGive(deviceMutex);
   return hash;
 }
 
 void displayTrackedDevices() {
   static unsigned long lastRender = 0;
-  static uint32_t lastStateHash = 0;
   unsigned long now = millis();
-  static bool lastScanMode = false;
 
-  if (now - lastRender < 300) {
-    return; // bail, not time to render
+  if (now - lastRender < 500) {
+    return;
+  }
+
+  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+    return;
   }
 
   uint32_t currentHash = getDisplayStateHash();
   if (currentHash == lastStateHash) {
+    xSemaphoreGive(deviceMutex);
     return;
   }
 
+  // Actually have data to change, go on
   lastStateHash = currentHash;
   lastRender = now;
 
+  xSemaphoreGive(deviceMutex);
+
   M5.Display.fillScreen(BLACK);
   drawTopBar();
+
+  if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+    return;
+  }
 
   int y = 15;
   int displayed = 0;
@@ -811,7 +826,6 @@ void displayTrackedDevices() {
         y += 1;
       }
 
-      // Default color logic
       if (trackedDevices[i].isSpecial) {
         M5.Display.setTextColor(ORANGE);
       } else if (trackedDevices[i].detected) {
@@ -1529,26 +1543,27 @@ void loop() {
   M5.update();
 
   if (firstRun) {
-    M5.Display.setBrightness(highBrightness ? 204 : 77);
-    screenOn = true;
+      M5.Display.setBrightness(highBrightness ? 204 : 77);
+      screenOn = true;
 
-    delay(200);
-    displayTrackedDevices();
-    lastDisplayUpdate = currentMillis;
-    firstRun = false;
-  }
+      delay(200);
+      displayTrackedDevices();
+      lastDisplayUpdate = currentMillis;
+      firstRun = false;
+    }
 
-  bool btnA = M5.BtnA.wasPressed();
-  bool btnB = M5.BtnB.wasPressed();
+    bool btnA = M5.BtnA.wasPressed();
+    bool btnB = M5.BtnB.wasPressed();
 
-  if ((btnA || btnB) && !screenOn) {
+    if ((btnA || btnB) && !screenOn) {
     screenOn = true;
     lastActivityTime = currentMillis;
     lastButtonPressTime = currentMillis;
     M5.Display.setBrightness(highBrightness ? 204 : 77);
     screenDimmed = false;
+    lastStateHash = 0;
     displayTrackedDevices();
-    lastDisplayUpdate = currentMillis; // Reset display timer
+    lastDisplayUpdate = currentMillis;
     return;
   }
 
