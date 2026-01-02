@@ -1391,7 +1391,12 @@ void scanTask(void *parameter) {
 
       if (xSemaphoreTake(deviceMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
         for (int i = 0; i < n; i++) {
-          trackWiFiDevice(WiFi.SSID(i).c_str(), WiFi.BSSIDstr(i).c_str(),
+          String bssid = WiFi.BSSIDstr(i);
+          if (isAllowlistedMac(bssid.c_str())) {
+            continue;
+          }
+
+          trackWiFiDevice(WiFi.SSID(i).c_str(), bssid.c_str(),
                           WiFi.RSSI(i), WiFi.channel(i), WiFi.encryptionType(i),
                           currentTime);
           vTaskDelay(1 / portTICK_PERIOD_MS);
