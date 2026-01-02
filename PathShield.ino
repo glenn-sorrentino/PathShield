@@ -550,6 +550,30 @@ void showFeedback(const char* msg, uint16_t color, const char* sub = NULL) {
   M5.Display.drawFastHLine(0, 96, SCREEN_WIDTH, MAGENTA);
 }
 
+int getVisibleWiFiCount() {
+  if (!filterByName) return wifiDeviceIndex;
+
+  int count = 0;
+  for (int i = 0; i < wifiDeviceIndex; i++) {
+    if (strlen(wifiDevices[i].ssid) > 0) {
+      count++;
+    }
+  }
+  return count;
+}
+
+int getVisibleBleCount() {
+  if (!filterByName) return deviceIndex;
+
+  int count = 0;
+  for (int i = 0; i < deviceIndex; i++) {
+    if (strlen(trackedDevices[i].name) > 0) {
+      count++;
+    }
+  }
+  return count;
+}
+
 void displayStartupMessage() {
   M5.Display.fillScreen(BLACK);
 
@@ -781,9 +805,22 @@ void displayTrackedDevices() {
   int totalItems = 0;
 
   if (scanningWiFi) {
-    totalItems = wifiDeviceIndex;
-    for (int i = scrollIndex; i < wifiDeviceIndex && displayed < maxDisplay;
-         i++, displayed++) {
+    totalItems = getVisibleWiFiCount();
+    int maxScroll = totalItems - maxDisplay;
+    if (maxScroll < 0) maxScroll = 0;
+    if (scrollIndex > maxScroll) scrollIndex = maxScroll;
+    int startIdx = 0;
+    int skipped = 0;
+    while (startIdx < wifiDeviceIndex && skipped < scrollIndex) {
+      if (!filterByName || strlen(wifiDevices[startIdx].ssid) > 0) {
+        skipped++;
+      }
+      startIdx++;
+    }
+
+    for (int i = startIdx; i < wifiDeviceIndex && displayed < maxDisplay; i++) {
+      if (filterByName && strlen(wifiDevices[i].ssid) == 0) continue;
+
       if (displayed > 0) {
         M5.Display.drawFastHLine(0, y - 2, SCREEN_WIDTH, BLUE_GREY);
         y += 1;
@@ -876,7 +913,18 @@ void displayTrackedDevices() {
 
     totalItems = filteredCount;
 
-    for (int idx = scrollIndex; idx < filteredCount && displayed < maxDisplay;
+    int maxScroll = totalItems - maxDisplay;
+    if (maxScroll < 0) maxScroll = 0;
+    if (scrollIndex > maxScroll) scrollIndex = maxScroll;
+
+    int startIdx = 0;
+    int skipped = 0;
+    while (startIdx < filteredCount && skipped < scrollIndex) {
+      startIdx++;
+      skipped++;
+    }
+
+    for (int idx = startIdx; idx < filteredCount && displayed < maxDisplay;
          idx++, displayed++) {
       int i = sortedIndices[idx];
 
@@ -890,7 +938,7 @@ void displayTrackedDevices() {
       } else if (trackedDevices[i].detected) {
         M5.Display.setTextColor(RED);
       } else {
-         M5.Display.setTextColor(BLE_NAME_COLOR);
+        M5.Display.setTextColor(BLE_NAME_COLOR);
       }
 
       M5.Display.setTextSize(2);
@@ -1322,7 +1370,7 @@ void handleBtnB() {
       lastDisplayRender = 0;
       displayTrackedDevices();
     } else {
-      int maxScroll = scanningWiFi ? wifiDeviceIndex - 3 : deviceIndex - 3;
+      int maxScroll = scanningWiFi ? getVisibleWiFiCount() - 3 : getVisibleBleCount() - 3;
       if (maxScroll < 0) maxScroll = 0;
       if (scrollIndex < maxScroll) {
         scrollIndex++;
@@ -1335,6 +1383,7 @@ void handleBtnB() {
     filterByName = !filterByName;
     showFeedback(filterByName ? "NAMED ONLY" : "SHOW ALL",
                  filterByName ? CYAN : ORANGE);
+    scrollIndex = 0;
     delay(800);
     lastStateHash = 0;
     lastDisplayRender = 0;
