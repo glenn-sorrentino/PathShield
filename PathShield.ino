@@ -1184,6 +1184,8 @@ void saveUserPreferences() {
   file.println(highBrightness ? "1" : "0");
   file.print("timeout=");
   file.println(screenTimeoutMs);
+  file.print("filterByName=");
+  file.println(filterByName ? "1" : "0");
 
   file.close();
 }
@@ -1202,6 +1204,8 @@ void loadUserPreferences() {
       highBrightness = line.substring(11).toInt() == 1;
     } else if (line.startsWith("timeout=")) {
       screenTimeoutMs = line.substring(8).toInt();
+    } else if (line.startsWith("filterByName=")) {
+      filterByName = line.substring(13).toInt() == 1;
     }
   }
 
@@ -1383,6 +1387,7 @@ void handleBtnB() {
     filterByName = !filterByName;
     showFeedback(filterByName ? "NAMED ONLY" : "SHOW ALL",
                  filterByName ? CYAN : ORANGE);
+    saveUserPreferences();
     scrollIndex = 0;
     delay(800);
     lastStateHash = 0;
