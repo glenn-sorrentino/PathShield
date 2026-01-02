@@ -1649,6 +1649,7 @@ void setup() {
   // Load user preferences (brightness, timeout, etc.)
   loadUserPreferences();
   currentlyBright = highBrightness;
+  M5.Display.setBrightness(currentlyBright ? 204 : 77);
   Serial.print("User preferences loaded - Brightness: ");
   Serial.println(highBrightness ? "High" : "Low");
   Serial.print("Screen Timeout: ");
