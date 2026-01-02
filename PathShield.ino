@@ -1118,6 +1118,7 @@ void setScreenTimeout() {
     }
     if (M5.BtnB.wasPressed()) {
       screenTimeoutMs = timeoutOptions[selected];
+      saveUserPreferences();
       settingTimeout = false;
       delay(200);
     }
