@@ -65,7 +65,8 @@ unsigned long lastActivityTime = 0;
 bool screenOn = true;
 unsigned long screenTimeoutMs = DEFAULT_SCREEN_TIMEOUT;
 volatile bool deviceDataChanged = false;
-static uint32_t lastStateHash = 0;
+// Use a sentinel so the first render runs even when there is no data yet
+static uint32_t lastStateHash = 0xFFFFFFFF;
 unsigned long lastDisplayRender = 0;
 unsigned long lastMenuRender = 0;
 
