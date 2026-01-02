@@ -796,6 +796,7 @@ void displayTrackedDevices() {
   // Actually have data to change, go on
   lastStateHash = currentHash;
   lastDisplayRender = now;
+  lastActivityTime = now;  // Keep screen awake when data changes
 
   M5.Display.fillScreen(BLACK);
   drawTopBar();
