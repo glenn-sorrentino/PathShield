@@ -471,9 +471,10 @@ void removeOldEntries(unsigned long currentTime) {
 }
 
 void alertUser(bool isSpecial, const char *name, const char *mac, float persistence) {
-
   screenOn = true;
   lastActivityTime = millis();
+  screenDimmed = false;
+  currentlyBright = true;
   M5.Display.setBrightness(204);
 
   if (isSpecial) {
@@ -517,6 +518,11 @@ void alertUser(bool isSpecial, const char *name, const char *mac, float persiste
     M5.update();
     delay(50);
   }
+
+  currentlyBright = highBrightness;
+  M5.Display.setBrightness(highBrightness ? 204 : 77);
+  screenDimmed = false;
+  lastActivityTime = millis();
 
   // Force display reset after alert dismissal to prevent race condition
   M5.Display.fillScreen(BLACK);
